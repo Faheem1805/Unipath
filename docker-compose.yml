@@ -1,0 +1,78 @@
+name: unipath
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run node scripts/init-env.mjs first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-unipath}
+    volumes:
+      - unipath-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+    networks: [private]
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-unipath}?schema=public&connection_limit=5
+      SEED_DEMO: ${SEED_DEMO:-true}
+    depends_on:
+      database:
+        condition: service_healthy
+    networks: [private]
+    restart: 'no'
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      target: runtime
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-unipath}?schema=public&connection_limit=10&pool_timeout=10
+      RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?Rate limit secret required}
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      COOKIE_NAME: ${COOKIE_NAME:-unipath_session}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_HOURS: ${SESSION_HOURS:-168}
+      TRUST_PROXY_HOPS: 1
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_RATE_LIMIT: ${API_RATE_LIMIT:-300}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT:-12}
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    networks: [private]
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    environment:
+      API_UPSTREAM: backend:3001
+    ports: ['${WEB_PORT:-8080}:8080']
+    depends_on:
+      backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    networks: [private]
+volumes:
+  unipath-postgres:
+networks:
+  private:

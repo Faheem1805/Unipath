@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../backend/generated/client"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  name String
+  passwordHash String
+  role String @default("STUDENT")
+  createdAt DateTime @default(now())
+  sessions Session[]
+  profile Profile?
+  plans Plan[]
+  attempts Attempt[]
+}
+model Session {
+  id String @id
+  userId String
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+}
+model Curriculum {
+  id String @id @default(uuid())
+  slug String @unique
+  document Json
+  published Boolean @default(false)
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profiles Profile[]
+  offerings Offering[]
+}
+model Profile {
+  userId String @id
+  curriculumId String
+  campus String
+  currentTerm String
+  semester Int
+  revision Int @default(1)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+  @@index([curriculumId])
+}
+model Attempt {
+  id String @id @default(uuid())
+  userId String
+  code String
+  term String
+  status String
+  grade String?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, code, term])
+}
+model Plan {
+  id String @id @default(uuid())
+  userId String
+  curriculumId String
+  term String
+  courseCodes String[]
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, term])
+}
+model Instructor {
+  id String @id @default(uuid())
+  name String
+  department String
+  sourceUrl String
+  verifiedAt DateTime
+  offerings Offering[]
+}
+model Offering {
+  id String @id @default(uuid())
+  curriculumId String
+  code String
+  term String
+  campus String
+  section String
+  schedule String?
+  sourceUrl String
+  verifiedAt DateTime
+  instructorId String?
+  instructor Instructor? @relation(fields: [instructorId], references: [id], onDelete: SetNull)
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  @@unique([curriculumId, code, term, campus, section])
+}
+model RateBucket {
+  key String @id
+  hits Int
+  expiresAt DateTime
+  @@index([expiresAt])
+}

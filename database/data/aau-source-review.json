@@ -1,0 +1,56 @@
+{
+  "reviewedAt": "2026-10-22",
+  "status": "PARTIAL_VERIFIED_FACTS_NOT_A_USABLE_CURRICULUM",
+  "university": "Al Ain University",
+  "program": "Bachelor of Science in Software Engineering",
+  "verifiedFacts": {
+    "totalCredits": 124,
+    "campuses": ["Al Ain", "Abu Dhabi"],
+    "minimumGraduationGpa": 2,
+    "internshipWeeks": 12
+  },
+  "courseFacts": [
+    { "code": "0102120", "title": "Computer Skills", "credits": 3, "prerequisites": [] },
+    {
+      "code": "0102221",
+      "title": "Object-Oriented Programming",
+      "credits": 3,
+      "prerequisites": ["0102220"]
+    },
+    {
+      "code": "0102270",
+      "title": "Data Structures and Algorithms",
+      "credits": 3,
+      "prerequisites": ["0102221", "0107200"],
+      "operator": "AND"
+    },
+    { "code": "0102330", "title": "Database Systems", "credits": 3, "prerequisites": ["0102221"] },
+    { "code": "0102453", "title": "Computer Ethics", "credits": 3, "minimumCredits": 60 },
+    { "code": "0103480", "title": "SE Internship", "credits": 3, "minimumCredits": 75 }
+  ],
+  "sources": [
+    {
+      "url": "https://engineering.aau.ac.ae/en/programs/bachelor-of-science-in-software-engineering/",
+      "note": "Public study-plan table and graduation requirements; admission-year applicability unspecified."
+    },
+    {
+      "url": "https://engineering.aau.ac.ae/uploads/editor/source/engineering/guidance_plan/Software_Engineering_Guidance_Plan.pdf",
+      "note": "Linked guidance diagram; no curriculum/admission year shown. Not merged with other versions."
+    },
+    {
+      "url": "https://engineering.aau.ac.ae/uploads/editor/source/engineering/course_description/Software_Engineering_Program.pdf",
+      "note": "Some specialization descriptions and credits available. Not used to silently resolve the web table."
+    }
+  ],
+  "unresolved": [
+    "No identified curriculum/admission-year mapping.",
+    "Web table uses (3,1,3) notation for two courses; interpretation needs confirmation.",
+    "Departmental approval is required for Capstone I.",
+    "Instructors, term offerings and timetables have not been verified."
+  ],
+  "grading": {
+    "source": "https://www.studentaffairs.aau.ac.ae/en/admission/undergraduate/course-grading-system",
+    "scale": { "A": 4, "B+": 3.5, "B": 3, "C+": 2.5, "C": 2, "D+": 1.5, "D": 1, "F": 0 },
+    "repeatPolicy": "Not verified; calculator labels and exposes the assumption."
+  }
+}

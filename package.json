@@ -1,0 +1,38 @@
+{
+  "name": "unipath",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"pnpm --filter @unipath/backend dev\" \"pnpm --filter @unipath/frontend dev\"",
+    "build": "pnpm --filter @unipath/shared build && pnpm --filter @unipath/backend build && pnpm --filter @unipath/frontend build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "db:generate": "pnpm --filter @unipath/backend db:generate",
+    "db:migrate": "pnpm --filter @unipath/backend db:migrate",
+    "db:seed": "pnpm --filter @unipath/backend db:seed",
+    "db:local": "node scripts/local-postgres.mjs",
+    "admin:create": "pnpm --filter @unipath/backend admin:create",
+    "test:api": "node scripts/test-api.mjs",
+    "test:unit": "vitest run tests/unit"
+  },
+  "devDependencies": {
+    "@prisma/client": "6.19.0",
+    "prisma": "6.19.0",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^22.15.0",
+    "@types/supertest": "^6.0.3",
+    "concurrently": "^9.2.1",
+    "dotenv": "^16.6.1",
+    "embedded-postgres": "17.6.0-beta.15",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12",
+    "prettier": "3.6.2"
+  }
+}
