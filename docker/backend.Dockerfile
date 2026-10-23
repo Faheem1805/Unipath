@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS base
+FROM node:22.23.4-bookworm-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
 WORKDIR /app
@@ -17,7 +17,7 @@ RUN pnpm db:generate && pnpm --filter @unipath/shared build && pnpm --filter @un
 # The migration job is a separate image target. API replicas never migrate.
 FROM build AS migrate
 USER node
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy --schema database/schema.prisma && node node_modules/tsx/dist/cli.mjs backend/src/seed.ts"]
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy --schema database/schema.prisma && node backend/dist/grant-runtime.js && node backend/dist/seed.js"]
 
 FROM base AS production-deps
 ENV NODE_ENV=production
@@ -38,4 +38,3 @@ USER node
 EXPOSE 3001
 HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "backend/dist/server.js"]
-

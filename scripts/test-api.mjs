@@ -1,10 +1,8 @@
-import { config } from 'dotenv';
 import { spawnSync } from 'node:child_process';
-config({ path: '.env' });
-const url = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+const url = process.env.TEST_DATABASE_URL;
 if (!url) {
   console.error(
-    'Set TEST_DATABASE_URL or DATABASE_URL to a running development PostgreSQL instance. Tests use a unique disposable schema.',
+    'Set TEST_DATABASE_URL explicitly to a disposable PostgreSQL database. Application DATABASE_URL is never a fallback.',
   );
   process.exit(1);
 }

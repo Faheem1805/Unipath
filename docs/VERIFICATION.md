@@ -1,5 +1,7 @@
 # Verification report
 
+> Historical implementation verification. For subsequent audit fixes and current Linux acceptance evidence, see [STAGING_VERIFICATION.md](STAGING_VERIFICATION.md) and [STAGING.md](STAGING.md). Statements below about unavailable Docker or missing CI describe the original environment.
+
 Recorded October 22, 2026. This report distinguishes executed checks from files that still need runtime verification.
 
 ## Executed and passed

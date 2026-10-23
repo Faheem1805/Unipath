@@ -89,7 +89,7 @@ describe('degree accounting', () => {
   it('can construct a legal complete sequence and respects each prior-term prerequisite', () => {
     const sequence = futureSequence(demoCurriculum, []);
     expect(sequence.unresolved).toBe(0);
-    let attempts: any[] = [];
+    const attempts: any[] = [];
     for (const term of sequence.semesters) {
       expect(term.credits).toBeLessThanOrEqual(18);
       const p = progress(demoCurriculum, attempts);

@@ -11,3 +11,11 @@ playwright-report
 coverage
 *.log
 *.dump
+.secrets
+*.backup
+*.db
+*.sqlite*
+*.pem
+*.key
+*.p12
+*.pfx

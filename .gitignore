@@ -4,6 +4,15 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.production.example
+.secrets/
+*.backup
+*.db
+*.sqlite*
+*.pem
+*.key
+*.p12
+*.pfx
 .local/
 test-results/
 playwright-report/

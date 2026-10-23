@@ -21,7 +21,7 @@ This is a self-reported planning application. It does not establish official aca
 
 Rate limits are per apparent IP. Many students behind one NAT share limits; a deployment operator must size them with expected traffic. Proxy hop trust must match the actual network path, and direct backend exposure should be prevented. Do not set trust proxy to a blanket boolean. CORS should list only the actual application origins. Production should remove loopback development origins.
 
-The Compose database account initializes with broad ownership for convenience. For production, use a dedicated release/migration credential and a least-privileged API role with table/sequence access and no DDL. No role provisioning or cloud security configuration is supplied. Containers are application packaging, not a complete hardened hosting system.
+Development Compose uses broad ownership for convenience. The separate production stack provisions bootstrap, migration-owner and runtime roles, including future-object grants and exclusion of migration history. See [STAGING.md](STAGING.md) for existing-volume adoption, private networking and the trusted TLS edge path. Containers are application packaging, not a complete hardened hosting system.
 
 Admin bootstrap accepts sensitive credentials through stdin; do not save password JSON in the repository or use real credentials in load tests. There is no public administrator signup or preconfigured admin password. Administrative edits use JSON forms to keep complex rules explicit and reviewable. Independently review this application before collecting real records.
 

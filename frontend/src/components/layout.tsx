@@ -1,4 +1,4 @@
-import { NavLink, Outlet, Link, Navigate } from 'react-router-dom';
+import { NavLink, Outlet, Link, Navigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   GitBranch,
@@ -46,6 +46,7 @@ export function ThemeButton() {
   );
 }
 export function Layout() {
+  const { pathname } = useLocation();
   const { user, isGuest, student, loading, error, notice, logout } = useStore();
   const [mobile, setMobile] = useState(false);
   const [logoutError, setLogoutError] = useState<unknown>(null);
@@ -60,7 +61,9 @@ export function Layout() {
       </div>
     );
   if (!isGuest && !user) return <Navigate to="/login" replace />;
-  if (!student?.profile) return <Navigate to="/onboarding" replace />;
+  if (!student?.profile && user?.role === 'ADMIN' && pathname !== '/app/admin')
+    return <Navigate to="/app/admin" replace />;
+  if (!student?.profile && user?.role !== 'ADMIN') return <Navigate to="/onboarding" replace />;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
@@ -154,12 +157,14 @@ export function Layout() {
             </button>
             <span className="workspace-name">My workspace</span>
             <span className="divider">/</span>
-            <span className="muted">{student.profile.curriculum.document.program}</span>
+            <span className="muted">
+              {student?.profile?.curriculum.document.program ?? 'Catalog administration'}
+            </span>
           </div>
           <div className="topbar-right">
             <span className="term-chip">
               <span />
-              {student.profile.currentTerm}
+              {student?.profile?.currentTerm ?? 'Administrator'}
             </span>
             <ThemeButton />
             <span className="avatar avatar-sm">

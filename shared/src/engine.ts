@@ -76,10 +76,40 @@ function credited(curriculum: Curriculum, codes: Set<string>): number {
   );
 }
 export type CourseState = 'completed' | 'taking' | 'eligible' | 'locked' | 'unplanned';
-export function progress(curriculum: Curriculum, attempts: Attempt[], planned: string[] = []) {
+// Term identifiers are exact opaque labels. Enrollment only counts in the target term;
+// selected courses never earn completed prerequisite credits.
+export function termContext(
+  curriculum: Curriculum,
+  attempts: Attempt[],
+  term?: string,
+  selected: string[] = [],
+): Context {
+  const completed = new Set(attempts.filter((a) => a.status === 'COMPLETED').map((a) => a.code));
+  return {
+    completed,
+    concurrent: new Set([
+      ...selected,
+      ...attempts.filter((a) => a.status === 'IN_PROGRESS' && a.term === term).map((a) => a.code),
+    ]),
+    credits: credited(curriculum, completed),
+  };
+}
+export function progress(
+  curriculum: Curriculum,
+  attempts: Attempt[],
+  planned: string[] = [],
+  targetTerm?: string,
+) {
   const completed = new Set(attempts.filter((a) => a.status === 'COMPLETED').map((a) => a.code));
   const taking = new Set(
-    attempts.filter((a) => a.status === 'IN_PROGRESS' && !completed.has(a.code)).map((a) => a.code),
+    attempts
+      .filter(
+        (a) =>
+          a.status === 'IN_PROGRESS' &&
+          (!targetTerm || a.term === targetTerm) &&
+          !completed.has(a.code),
+      )
+      .map((a) => a.code),
   );
   const completedCredits = credited(curriculum, completed);
   const inProgressCredits =
@@ -95,11 +125,7 @@ export function progress(curriculum: Curriculum, attempts: Attempt[], planned: s
   }));
   const states: Record<string, { state: CourseState; reasons: string[] }> = {};
   for (const c of curriculum.courses) {
-    const check = evaluate(c.requirement, {
-      completed,
-      concurrent: new Set([...taking, ...planned]),
-      credits: completedCredits,
-    });
+    const check = evaluate(c.requirement, termContext(curriculum, attempts, targetTerm, planned));
     const groupMet =
       c.electiveGroup && groups.some((g) => g.id === c.electiveGroup && g.completed >= g.credits);
     const state: CourseState = completed.has(c.code)
@@ -183,45 +209,53 @@ export function futureSequence(curriculum: Curriculum, attempts: Attempt[], maxC
     let credits = 0;
     for (const c of candidates) {
       if (selected.some((x) => x.code === c.code)) continue;
-      // Include co-requisite partners together; the complete batch is evaluated against prior terms.
-      const bundle = [c];
-      const addCorequisites = (r: Requirement | null) => {
-        if (!r) return;
+      const completed = new Set(
+        simulated.filter((a) => a.status === 'COMPLETED').map((a) => a.code),
+      );
+      // Branch locally for OR rules; bound work because this is a projection heuristic.
+      let budget = 256;
+      const expand = (r: Requirement | null, batch: Course[]): Course[][] => {
+        if (--budget < 0) return [];
+        const ctx = {
+          completed,
+          concurrent: new Set([...selected, ...batch].map((x) => x.code)),
+          credits: p.completedCredits,
+        };
+        if (evaluate(r, ctx).ok) return [batch];
+        if (!r) return [batch];
+        if (r.type === 'any') return r.items.flatMap((part) => expand(part, [...batch]));
+        if (r.type === 'all')
+          return r.items.reduce<Course[][]>(
+            (batches, part) => batches.flatMap((b) => expand(part, b)),
+            [batch],
+          );
+        if (r.type !== 'corequisite') return [];
+        const partner = candidates.find((x) => x.code === r.code);
+        return partner ? expand(partner.requirement, [...batch, partner]) : [];
+      };
+      for (const bundle of expand(c.requirement, [c])) {
+        const concurrent = new Set([...selected, ...bundle].map((x) => x.code));
+        const ctx = {
+          completed: new Set(simulated.filter((a) => a.status === 'COMPLETED').map((a) => a.code)),
+          concurrent,
+          credits: p.completedCredits,
+        };
+        const bundleCredits = bundle.reduce((n, x) => n + x.credits, 0);
+        const groupsFit = curriculum.groups.every((g) => {
+          const added = [...selected, ...bundle]
+            .filter((x) => x.electiveGroup === g.id)
+            .reduce((n, x) => n + x.credits, 0);
+          return added <= g.credits - (p.groups.find((x) => x.id === g.id)?.completed ?? 0);
+        });
         if (
-          r.type === 'corequisite' &&
-          !simulated.some((a) => a.code === r.code && a.status === 'COMPLETED') &&
-          !selected.some((x) => x.code === r.code) &&
-          !bundle.some((x) => x.code === r.code)
+          credits + bundleCredits <= maxCredits &&
+          groupsFit &&
+          bundle.every((x) => evaluate(x.requirement, ctx).ok)
         ) {
-          const partner = candidates.find((x) => x.code === r.code);
-          if (partner) {
-            bundle.push(partner);
-            addCorequisites(partner.requirement);
-          }
+          selected.push(...bundle);
+          credits += bundleCredits;
+          break;
         }
-        if (r.type === 'all' || r.type === 'any') r.items.forEach(addCorequisites);
-      };
-      addCorequisites(c.requirement);
-      const concurrent = new Set([...selected, ...bundle].map((x) => x.code));
-      const ctx = {
-        completed: new Set(simulated.filter((a) => a.status === 'COMPLETED').map((a) => a.code)),
-        concurrent,
-        credits: p.completedCredits,
-      };
-      const bundleCredits = bundle.reduce((n, x) => n + x.credits, 0);
-      const groupsFit = curriculum.groups.every((g) => {
-        const added = [...selected, ...bundle]
-          .filter((x) => x.electiveGroup === g.id)
-          .reduce((n, x) => n + x.credits, 0);
-        return added <= g.credits - (p.groups.find((x) => x.id === g.id)?.completed ?? 0);
-      });
-      if (
-        credits + bundleCredits <= maxCredits &&
-        groupsFit &&
-        bundle.every((x) => evaluate(x.requirement, ctx).ok)
-      ) {
-        selected.push(...bundle);
-        credits += bundleCredits;
       }
     }
     if (!selected.length) break;

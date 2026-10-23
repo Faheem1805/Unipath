@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Save, Search, Plus, Check, BookOpenCheck } from 'lucide-react';
+import { Save, Search, Check, BookOpenCheck } from 'lucide-react';
 import { type Attempt, type Course, gradeSchema, progress } from '@unipath/shared';
 import { useAcademic } from '../lib/store';
 import { Button, PageTitle, ErrorBox, Status } from '../components/common';
@@ -18,7 +18,7 @@ export function ProgressPage() {
     setDraft(s.attempts);
     setDirty(false);
   }, [attemptKey]);
-  const stats = progress(s.curriculum, draft);
+  const stats = progress(s.curriculum, draft, [], s.student?.profile?.currentTerm);
   const courses = s.curriculum.courses.filter((c) =>
     `${c.code} ${c.title}`.toLowerCase().includes(search.toLowerCase()),
   );

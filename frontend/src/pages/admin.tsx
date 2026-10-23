@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
 import {
@@ -9,7 +9,6 @@ import {
   Download,
   Trash2,
   ShieldCheck,
-  FileJson,
   BookOpen,
   Users,
 } from 'lucide-react';
@@ -18,6 +17,7 @@ import {
   type Curriculum,
   type Course,
   demoCurriculum,
+  curriculumSchema,
 } from '@unipath/shared';
 import { useStore } from '../lib/store';
 import { api, send, download } from '../lib/api';
@@ -65,9 +65,17 @@ export function Admin() {
   });
   if (s.user?.role !== 'ADMIN' || s.isGuest) return <Navigate to="/app" replace />;
   let document: Curriculum | null = null;
+  let validationError: string | null = null;
   try {
-    document = JSON.parse(text);
-  } catch {}
+    const result = curriculumSchema.safeParse(JSON.parse(text));
+    if (result.success) document = result.data;
+    else
+      validationError = result.error.issues
+        .map((i) => `${i.path.join('.') || 'document'}: ${i.message}`)
+        .join('; ');
+  } catch {
+    validationError = 'Enter valid JSON before editing courses or publishing.';
+  }
   async function refresh() {
     await cache.invalidateQueries({ queryKey: ['admin-curricula'] });
     await cache.invalidateQueries({ queryKey: ['curricula'] });
@@ -246,6 +254,7 @@ export function Admin() {
                     verification metadata and course requirements here. Imports and saves validate
                     totals, references, cycles and group capacity atomically.
                   </p>
+                  {validationError && <p role="alert">{validationError}</p>}
                   <div className="editor-actions">
                     <Button disabled={busy || selected.published} onClick={() => save(false)}>
                       <Save size={15} />
@@ -471,7 +480,7 @@ function Directory({ records }: { records: AdminRecord[] }) {
     const d = value
       ? { ...value }
       : type === 'instructors'
-        ? { name: '', department: '', sourceUrl: '', verifiedAt: '2026-10-22' }
+        ? { name: '', department: '', sourceUrl: '', verifiedAt: '' }
         : {
             curriculumId: records[0]?.id ?? '',
             code: records[0]?.document.courses[0]?.code ?? '',
@@ -480,12 +489,14 @@ function Directory({ records }: { records: AdminRecord[] }) {
             section: '1',
             schedule: null,
             sourceUrl: '',
-            verifiedAt: '2026-10-22',
+            verifiedAt: '',
             instructorId: null,
           };
     const clean = { ...d } as Record<string, unknown>;
     delete clean.id;
     delete clean.instructor;
+    delete clean.reviewedBy;
+    delete clean.reviewedAt;
     clean.verifiedAt = String(clean.verifiedAt).slice(0, 10);
     setText(JSON.stringify(clean, null, 2));
   }

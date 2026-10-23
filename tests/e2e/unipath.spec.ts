@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 test('guest can explore, change progress, save a plan and calculate GPA', async ({
   page,
 }, testInfo) => {

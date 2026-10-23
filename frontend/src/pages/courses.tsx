@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Search, SlidersHorizontal, ArrowUpRight, BookOpen } from 'lucide-react';
-import { type Course, type CourseState } from '@unipath/shared';
+import { Search, SlidersHorizontal, ArrowUpRight } from 'lucide-react';
+import { type Course } from '@unipath/shared';
 import { useAcademic } from '../lib/store';
 import { PageTitle, Status, Empty, stateLabels } from '../components/common';
 import { CourseDetail } from '../components/course-detail';

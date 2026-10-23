@@ -23,7 +23,7 @@ When using an external PostgreSQL service, replace `DATABASE_URL` and use a sepa
 
 Do not run `prisma migrate dev` or `db push` on production. Do not place migrations in backend startup. A future migration should be reviewed for compatibility with both old and new application replicas before a rolling release. The seed is idempotent and never changes an existing curriculum document.
 
-Multiple API instances use the same database and `RATE_LIMIT_SECRET`, compatible cookie configuration, and the same exact allowed origins. There is no instance session affinity requirement. The frontend can proxy to any reachable instance or upstream. The supplied Nginx resolves upstream service names at startup; restart/reload it after changing a service’s backend IP set. Dynamic service discovery and cloud load balancing are left to the operator.
+Multiple API instances use the same database and `RATE_LIMIT_SECRET`, compatible cookie configuration, and the same exact allowed origins. There is no instance session affinity requirement. Nginx now resolves the backend at runtime through Docker DNS and follows changed addresses. See [staging release instructions](STAGING.md) for production identities, proxy trust and acceptance.
 
 For a local scaling experiment on a machine with Docker:
 
@@ -41,11 +41,11 @@ This example is not a verified benchmark or an Azure scaling configuration. Veri
 | `/health/ready` | 200 after a successful PostgreSQL probe; 503 when it cannot reach the critical dependency |
 | `/health/web`   | 200 from the Nginx frontend                                                               |
 
-Health probes intentionally do not require authentication and do not consume API rate buckets. API startup separately verifies the curriculum table exists. Configure probe timeouts for database/network failure behavior in your deployment; the API readiness request may wait for its connection timeout.
+Health probes intentionally do not require authentication and do not consume API rate buckets. API startup probes all model columns for release-schema presence. Readiness remains a bounded connectivity probe; migration status/diff and compatibility review are separate release requirements in [STAGING.md](STAGING.md).
 
 Request logs go to stdout as JSON: request ID, method, route template, status and duration. Operational logs include startup, shutdown, account creation, imports, cleanup failures and safe application errors. Sensitive request data is not included. Capture stdout/stderr using your chosen platform logging tools. Browser errors display a request ID for correlation.
 
-API shutdown on Linux SIGTERM/SIGINT drains connections and disconnects Prisma. The 15-second forced deadline is intended to fit inside a longer container termination grace period. Abrupt VM/process loss is still possible; persistent state is in PostgreSQL.
+API shutdown on Linux SIGTERM/SIGINT drains connections and disconnects Prisma. The 15-second forced deadline fits inside the explicit 25-second container stop grace; request and database budgets are documented in [STAGING.md](STAGING.md). Abrupt VM/process loss is still possible; persistent state is in PostgreSQL.
 
 ## Bootstrap an administrator
 
@@ -84,7 +84,7 @@ node -e 'process.stdout.write(JSON.stringify({email:process.env.UNIPATH_ADMIN_EM
 unset UNIPATH_ADMIN_EMAIL UNIPATH_ADMIN_NAME UNIPATH_ADMIN_PASSWORD
 ```
 
-The password exists briefly in process memory/environment; use a trusted administrative workstation. No credential is echoed by the application. Log in, finish degree setup if needed, then open Administration. A bootstrap command fails on an existing email rather than silently promoting or resetting another account.
+The password exists briefly in process memory/environment; use a trusted administrative workstation. No credential is echoed by the application. Administrators can open Administration immediately, including with an empty catalog and no student profile. A bootstrap command fails on an existing email rather than silently promoting or resetting another account. For the production stack, include `--env-file .env.production -f docker-compose.production.yml` in Compose commands.
 
 ## Backup and restore
 
@@ -106,7 +106,7 @@ docker compose exec -T database sh -c 'pg_restore --no-owner --no-privileges -U 
 docker compose exec database sh -c 'psql -U "$POSTGRES_USER" -d unipath_restore_check'
 ```
 
-The last command opens an interactive SQL prompt. Issue `SELECT count(*) FROM "Curriculum";`, inspect the result, and use `\q` to exit. Validate restored student counts and a synthetic sign-in against the restored database before considering the exercise successful. Never restore over a live database without an explicit recovery procedure. No actual backup/restore exercise was executed in the authoring environment.
+The last command opens an interactive SQL prompt. Issue `SELECT count(*) FROM "Curriculum";`, inspect the result, and use `\q` to exit. Validate restored student counts and synthetic credentials against the restored database before considering the exercise successful. Never restore over a live database without an explicit recovery procedure. Current disposable restore evidence is recorded in [STAGING_VERIFICATION.md](STAGING_VERIFICATION.md).
 
 For managed PostgreSQL, use the service’s supported dump/restore or point-in-time recovery workflow; do not assume all extensions/roles transfer automatically. Restore drills, disaster simulations and Azure recovery architecture are intentionally not implemented.
 
@@ -137,4 +137,4 @@ Default production rate limits can intentionally cause 429s under load. For an i
 
 ## Production checklist within application scope
 
-Set `NODE_ENV=production`, `COOKIE_SECURE=true`, HTTPS-only exact `CORS_ORIGINS`, a private rate secret, and a reachable verified-TLS database URL. Apply one migration job, check health endpoints, confirm session behavior through your trusted proxy path, and exercise a synthetic account. Keep database credentials outside images, limit backend/database network exposure, and define backup retention and monitoring. No CI/CD pipeline, cloud account changes, infrastructure resources or production deployment are included.
+Use [STAGING.md](STAGING.md) and the standalone production Compose file for exact HTTPS origins, secure cookies, private credentials, least-privilege roles, proxy trust and loopback binding. Apply one migration job, check health endpoints and authenticated access through the real TLS edge, and define backup retention and monitoring. GitHub Actions checks are supplied; cloud account changes, infrastructure resources and public deployment are outside this work.

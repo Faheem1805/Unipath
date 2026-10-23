@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BookOpen, ArrowRight, GitBranch } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { type Course, ruleText, references } from '@unipath/shared';
+import { type Course, ruleText } from '@unipath/shared';
 import { Modal } from './ui/dialog';
 import { Button, Status, ErrorBox } from './common';
 import { useAcademic } from '../lib/store';

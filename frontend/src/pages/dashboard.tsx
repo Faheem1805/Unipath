@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { futureSequence, type Course } from '@unipath/shared';
 import { useAcademic } from '../lib/store';
-import { Button, PageTitle, CourseList, Status } from '../components/common';
+import { Button, PageTitle, CourseList } from '../components/common';
 import { CourseDetail } from '../components/course-detail';
 export function Dashboard() {
   const { curriculum, stats, student, isGuest, user, attempts } = useAcademic();

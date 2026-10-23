@@ -26,6 +26,14 @@ export const sourceSchema = z.object({
   url: z.string().url().max(1000).startsWith('https://'),
   note: z.string().max(500),
 });
+// Verification dates are calendar dates in UTC, independent of browser/server local time.
+export const verificationDateSchema = z
+  .string()
+  .date()
+  .refine(
+    (date) => date <= new Date().toISOString().slice(0, 10),
+    'Verification date cannot be in the future (UTC).',
+  );
 export const courseSchema = z
   .object({
     code,
@@ -66,7 +74,7 @@ export const curriculumSchema = z
     totalCredits: z.number().int().min(1).max(300),
     verification: z.enum(['FICTIONAL', 'VERIFIED', 'UNVERIFIED']),
     verificationNote: z.string().min(10).max(2000),
-    verifiedAt: z.string().date().nullable(),
+    verifiedAt: verificationDateSchema.nullable(),
     sources: z.array(sourceSchema).max(15),
     groups: z.array(groupSchema).max(20),
     courses: z.array(courseSchema).min(1).max(300),
@@ -100,21 +108,26 @@ export const curriculumSchema = z
       data.groups.reduce((n, g) => n + g.credits, 0);
     if (total !== data.totalCredits)
       error(`Requirements add to ${total}, not ${data.totalCredits} credits.`);
-    const visiting = new Set<string>(),
-      visited = new Set<string>();
-    const visit = (id: string): boolean => {
-      if (visiting.has(id)) return true;
-      if (visited.has(id)) return false;
-      visiting.add(id);
-      const cycle = references(
-        data.courses.find((c) => c.code === id)?.requirement ?? null,
-        false,
-      ).some(visit);
-      visiting.delete(id);
-      visited.add(id);
-      return cycle;
+    // Least fixed point: an OR edge is mandatory only when every alternative is blocked.
+    // Credit/approval/corequisite rules do not introduce strict prerequisite edges.
+    const reachable = new Set<string>();
+    const canReach = (rule: Requirement | null): boolean => {
+      if (!rule) return true;
+      if (rule.type === 'course') return reachable.has(rule.code);
+      if (rule.type === 'all') return rule.items.every(canReach);
+      if (rule.type === 'any') return rule.items.some(canReach);
+      return true;
     };
-    if (data.courses.some((c) => visit(c.code))) error('Prerequisite cycles are not allowed.');
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const course of data.courses)
+        if (!reachable.has(course.code) && canReach(course.requirement)) {
+          reachable.add(course.code);
+          changed = true;
+        }
+    }
+    if (reachable.size !== codes.size)
+      error('Unavoidable prerequisite cycle: no feasible alternative path.');
     if (
       data.verification === 'VERIFIED' &&
       (!data.verifiedAt || !data.sources.length || data.courses.some((c) => !c.sources.length))

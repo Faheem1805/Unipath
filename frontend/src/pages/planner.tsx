@@ -1,15 +1,6 @@
 import { useMemo, useState } from 'react';
-import {
-  CalendarDays,
-  Plus,
-  Check,
-  Trash2,
-  ArrowRight,
-  GitBranch,
-  Save,
-  AlertCircle,
-} from 'lucide-react';
-import { futureSequence, evaluate, ruleText, type Course } from '@unipath/shared';
+import { CalendarDays, Plus, Check, Trash2, GitBranch, Save, AlertCircle } from 'lucide-react';
+import { futureSequence, evaluate, termContext, progress, type Course } from '@unipath/shared';
 import { useAcademic } from '../lib/store';
 import { Button, PageTitle, ErrorBox, Status, Empty } from '../components/common';
 export function Planner() {
@@ -23,15 +14,11 @@ export function Planner() {
     () => futureSequence(s.curriculum, s.attempts),
     [s.curriculum, s.attempts],
   );
-  const completed = new Set(s.attempts.filter((a) => a.status === 'COMPLETED').map((a) => a.code));
-  const check = (c: Course) =>
-    evaluate(c.requirement, {
-      completed,
-      concurrent: new Set(codes),
-      credits: s.stats.completedCredits,
-    });
+  const context = termContext(s.curriculum, s.attempts, term, codes);
+  const stats = progress(s.curriculum, s.attempts, codes, term);
+  const check = (c: Course) => evaluate(c.requirement, context);
   const options = s.curriculum.courses.filter(
-    (c) => !['completed', 'taking', 'unplanned'].includes(s.stats.states[c.code].state),
+    (c) => !['completed', 'taking', 'unplanned'].includes(stats.states[c.code].state),
   );
   const chosen = s.curriculum.courses.filter((c) => codes.includes(c.code));
   const credits = chosen.reduce((n, c) => n + c.credits, 0);

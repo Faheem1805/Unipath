@@ -10,7 +10,7 @@ UniPath connects a React student workspace to an Express API and PostgreSQL. It 
 
 ## Quick start with Docker
 
-Install Docker Engine/Desktop with Docker Compose v2. Use Node.js 22.12+ for the optional environment generator:
+Install Docker Engine/Desktop with Docker Compose v2. Use Node.js 22.23.4 for the optional environment generator:
 
 ```sh
 node scripts/init-env.mjs
@@ -23,11 +23,11 @@ Without Node on the host, copy `.env.example` to `.env`, replace both `CHANGE_ME
 
 The database waits for readiness, a one-shot migration job applies migrations and an idempotent seed, then the API and frontend start. Only the frontend is published to the host. PostgreSQL data persists in `unipath_unipath-postgres`. `docker compose down` preserves it. `docker compose down -v` **deletes it**.
 
-**Verification status:** native PostgreSQL integration and browser tests were run in the authoring environment. Docker is not installed there, so an actual image build and Compose startup remain unverified. See [the verification report](docs/VERIFICATION.md) for exact results and limits.
+**Staging:** use the separate [production configuration and release procedure](docs/STAGING.md), not development defaults. Linux container, database and browser checks are recorded in [staging verification](docs/STAGING_VERIFICATION.md); the [original verification report](docs/VERIFICATION.md) and [audit](docs/CODEBASE_AUDIT.md) are historical. The real Azure VM, HTTPS edge and public proxy path still require acceptance.
 
 ## Local development
 
-Prerequisites: Node.js 22.12+, pnpm 11.25.0, and PostgreSQL 17. Use Corepack or install the pinned pnpm version through npm.
+Prerequisites: Node.js 22.23.4 (container/CI baseline; local Node 24.19.0+ also supported), pnpm 11.25.0, and PostgreSQL 17. Use Corepack or install the pinned pnpm version through npm.
 
 ```sh
 corepack enable
@@ -141,18 +141,21 @@ Use the administration area to import JSON or CSV, inspect source information, e
 ## Testing and builds
 
 ```sh
+pnpm format:check
+pnpm lint
 pnpm typecheck
 pnpm test:unit
 pnpm test:api
 pnpm build
 pnpm exec playwright install chromium
 pnpm test:e2e
+pnpm test:containers
 pnpm audit
 ```
 
-`test:api` requires a running development database and creates/drops a randomly named schema without touching public application tables. Use a test-only database role allowed to create schemas. `pnpm test` runs unit tests and includes API tests only if `TEST_DATABASE_URL` is explicitly set; skipped API tests do not establish persistence verification.
+`test:api` requires an explicit `TEST_DATABASE_URL` pointing to a disposable database, and creates/drops a randomly named schema. There is no application-URL fallback. Use a test-only database role allowed to create schemas. `pnpm test` runs unit tests and includes API tests only if `TEST_DATABASE_URL` is explicitly set; skipped API tests do not establish persistence verification. `test:containers` creates its own isolated stack and runs the API/browser suites plus operational acceptance automatically.
 
-For browser tests, start the migrated/seeded API and Vite frontend first. The tests run desktop Chromium and an iPhone-sized Chromium viewport. The wrapper creates a synthetic administrator, runs student/admin workflows, and removes records uniquely named for that invocation afterward. `DATABASE_URL` must point to the database used by the frontend/API under test. Local databases are accepted by default; a disposable remote database requires the explicit `E2E_ALLOW_REMOTE_DATABASE=true` flag. Use a disposable development database, never a live student database. Mobile Safari, Firefox and WebKit were not tested. Reports appear in `playwright-report/`, traces/screenshots in `test-results/`.
+For standalone browser tests, start the migrated/seeded API and Vite frontend first. The tests run desktop Chromium and an iPhone-sized Chromium viewport. The wrapper creates a synthetic administrator without a student profile, runs student/admin workflows, and removes records uniquely named for that invocation afterward. Explicit `TEST_DATABASE_URL` must point to the disposable database used by that frontend/API. Set `E2E_BOOTSTRAP_ONLY=true` to run the administrator workflow against an empty catalog. Local databases are accepted by default; a disposable remote database requires the explicit `E2E_ALLOW_REMOTE_DATABASE=true` flag. Mobile Safari, Firefox and WebKit were not tested. Reports appear in `playwright-report/`, traces/screenshots in `test-results/`.
 
 The suite covers prerequisite operators, credit thresholds, electives, repeats, GPA, malformed imports, sessions across app instances, private record isolation, authorization, persisted plans, and the essential student browser journeys. See [verification](docs/VERIFICATION.md).
 
@@ -184,7 +187,7 @@ Scenarios cover homepage requests, concurrent API browsing, curriculum/map retri
 
 ## Boundaries and known limitations
 
-This application supplies portable containers, health endpoints, operational notes and load scenarios. It does **not** create Azure resources, Terraform, CI/CD, DNS, load balancers, VM Scale Sets or disaster-recovery infrastructure.
+This application supplies portable containers, GitHub Actions verification, health endpoints, operational notes and load scenarios. It does **not** create Azure resources, Terraform, DNS, load balancers, VM Scale Sets or disaster-recovery infrastructure.
 
 Before handling real student records: verify an admission-year-specific curriculum, review grading/repeat rules, secure TLS and database access, establish backup/restore procedures, review retention/privacy policy, perform an independent security review, and decide whether email verification, password recovery and MFA are required. This release has no email service, self-service password recovery, transfer-equivalence engine or official registrar integration. Admin editing uses validated JSON forms intended for trusted data maintainers. Future-term estimates do not solve timetable constraints or prove optimal graduation timing.
 

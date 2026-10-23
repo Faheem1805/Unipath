@@ -1,5 +1,7 @@
 # UniPath codebase audit
 
+> **Historical audit snapshot.** The observations and failures below describe the pre-fix code on 22 October 2026. The repository is now initialized and connected to GitHub. Follow-up changes and newly executed regression/acceptance results are tracked separately in [STAGING_VERIFICATION.md](STAGING_VERIFICATION.md); the original 40 passing tests do not close these findings. Deployment configuration and target-VM requirements are in [STAGING.md](STAGING.md).
+
 **Audit date:** 22 October 2026  
 **Purpose:** Assess the existing application as a foundation for Azure Cloud Engineering exercises. This is an audit, not a redesign or deployment approval.
 

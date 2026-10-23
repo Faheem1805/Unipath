@@ -1,0 +1,81 @@
+name: unipath-staging
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: unipath_bootstrap
+      POSTGRES_PASSWORD: ${BOOTSTRAP_DB_PASSWORD:?Supply private production environment}
+      POSTGRES_DB: ${POSTGRES_DB:-unipath}
+    volumes: [unipath-postgres:/var/lib/postgresql/data]
+    networks: [private]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  provision:
+    image: postgres:17-alpine
+    environment:
+      PGHOST: database
+      PGUSER: unipath_bootstrap
+      PGPASSWORD: ${BOOTSTRAP_DB_PASSWORD:?Required}
+      PGDATABASE: ${POSTGRES_DB:-unipath}
+      POSTGRES_DB: ${POSTGRES_DB:-unipath}
+      OWNER_DB_PASSWORD: ${OWNER_DB_PASSWORD:?Required}
+      RUNTIME_DB_PASSWORD: ${RUNTIME_DB_PASSWORD:?Required}
+    volumes: ['./database/provision.sql:/provision.sql:ro']
+    command: [psql, -X, -q, -f, /provision.sql]
+    depends_on:
+      database: { condition: service_healthy }
+    networks: [private]
+    restart: 'no'
+  migrate:
+    build: { context: ., dockerfile: docker/backend.Dockerfile, target: migrate }
+    environment:
+      DATABASE_URL: postgresql://unipath_migrator:${OWNER_DB_PASSWORD:?Required}@database:5432/${POSTGRES_DB:-unipath}?schema=public&connection_limit=5&connect_timeout=3&socket_timeout=5
+      GRANT_RUNTIME: 'true'
+      SEED_DEMO: ${SEED_DEMO:-false}
+    depends_on:
+      provision: { condition: service_completed_successfully }
+    networks: [private]
+    restart: 'no'
+  backend:
+    build: { context: ., dockerfile: docker/backend.Dockerfile, target: runtime }
+    environment:
+      DATABASE_URL: postgresql://unipath_runtime:${RUNTIME_DB_PASSWORD:?Required}@database:5432/${POSTGRES_DB:-unipath}?schema=public&connection_limit=10&pool_timeout=2&connect_timeout=3&socket_timeout=5
+      RATE_LIMIT_SECRET: ${RATE_LIMIT_SECRET:?Required}
+      NODE_ENV: production
+      PORT: 3001
+      CORS_ORIGINS: ${PRODUCTION_ORIGIN:?Exact HTTPS origin required}
+      COOKIE_SECURE: 'true'
+      COOKIE_NAME: unipath_session
+      TRUST_PROXY_HOPS: 1
+      LOG_LEVEL: info
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    stop_grace_period: 25s
+    networks: [private]
+    restart: unless-stopped
+  frontend:
+    build: { context: ., dockerfile: docker/frontend.Dockerfile }
+    environment:
+      API_UPSTREAM: backend:3001
+      EDGE_SCHEME: https
+      TRUSTED_EDGE_CIDR: ${TRUSTED_EDGE_CIDR:?Exact TLS edge source CIDR required}
+    ports: ['127.0.0.1:${WEB_PORT:-8080}:8080']
+    depends_on:
+      backend: { condition: service_healthy }
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+    restart: unless-stopped
+volumes:
+  unipath-postgres:
+networks:
+  private:

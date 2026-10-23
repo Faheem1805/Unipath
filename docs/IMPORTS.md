@@ -6,7 +6,7 @@ Only authenticated administrators can import or edit academic data. Download the
 
 Top-level fields: `slug`, `university`, `program`, `version`, nullable `admissionYear`, `campuses`, `totalCredits`, `verification`, `verificationNote`, nullable `verifiedAt`, `sources`, `groups`, `courses`.
 
-Verification is `FICTIONAL`, `UNVERIFIED`, or `VERIFIED`. Verified documents require a date (`YYYY-MM-DD`), top-level HTTPS source references and at least one HTTPS source per course. A source object contains `url` and `note`. Sources and the verified status reflect administrator review; the importer cannot authenticate university policy by itself.
+Verification is `FICTIONAL`, `UNVERIFIED`, or `VERIFIED`. Verified documents require a date (`YYYY-MM-DD`, UTC calendar convention, never in the future), top-level HTTPS source references and at least one HTTPS source per course. A source object contains `url` and `note`. The server records the authenticated reviewer ID and UTC review timestamp on the curriculum record, separately from client-editable JSON; historical attribution remains null. Sources and metadata reflect administrator attestation and do not establish official status. Real advising requires authoritative, admission-year-specific source and policy review. Existing demo data remains fictional.
 
 An elective group is `{ "id": "major", "title": "Major electives", "credits": 6 }`. A required course has `electiveGroup: null`; an option refers to an existing group ID. Required credits plus the groups’ required credits must equal the degree total. Each group must contain a feasible credit combination. A course may belong to only one group; overlapping double-counting is deliberately unsupported.
 
@@ -36,7 +36,7 @@ An elective group is `{ "id": "major", "title": "Major electives", "credits": 6 
 }
 ```
 
-All referenced course codes must occur in the same version. Course prerequisites cannot self-reference or form cycles. Corequisite pairs may be concurrent; strict prerequisite cycles are rejected. `requirement: null` means no known prerequisite **only after an administrator verifies that meaning**. Do not turn unavailable university information into a null rule and label it verified.
+All referenced course codes must occur in the same version and cannot self-reference. Validation rejects unavoidable strict prerequisite cycles while accepting feasible OR alternatives (for example C → A → B when A requires B OR C). Corequisite pairs may be concurrent. `requirement: null` means no known prerequisite **only after an administrator verifies that meaning**. Do not turn unavailable university information into a null rule and label it verified.
 
 Supported requirement expressions:
 

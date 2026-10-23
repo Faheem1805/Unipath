@@ -1,14 +1,12 @@
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import { PrismaClient, Prisma } from '../../backend/generated/client/index.js';
-import { config as dotenv } from 'dotenv';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createApp } from '../../backend/src/app.js';
 import { readConfig } from '../../backend/src/config.js';
 import { hashPassword } from '../../backend/src/security.js';
 import { demoCurriculum } from '../../shared/src/index.js';
-dotenv({ path: '.env' });
 const connection = process.env.TEST_DATABASE_URL;
 const suite = connection ? describe : describe.skip;
 suite('PostgreSQL API integration (isolated disposable schema)', () => {
@@ -35,7 +33,10 @@ suite('PostgreSQL API integration (isolated disposable schema)', () => {
     db = new PrismaClient({ datasources: { db: { url: url.toString() } } });
     await db.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
     await db.$executeRawUnsafe(`SET search_path TO "${schema}"`);
-    const sql = readFileSync('database/migrations/202610220001_initial/migration.sql', 'utf8');
+    const sql = readdirSync('database/migrations', { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => readFileSync(`database/migrations/${d.name}/migration.sql`, 'utf8'))
+      .join('\n');
     // Every statement comes from this repository's checked-in migration, never user input.
     for (const statement of sql
       .split(';')
@@ -324,6 +325,153 @@ suite('PostgreSQL API integration (isolated disposable schema)', () => {
     const failing = createApp(unavailable, cfg).app;
     expect((await request(failing).get('/health/ready')).status).toBe(503);
     expect((await request(failing).get('/health/live')).status).toBe(200);
+  });
+  it('rejects a deterministically delayed old-password login after password change on another replica', async () => {
+    const agent = request.agent(app);
+    await mutate(agent, 'post', '/api/auth/register', {
+      email: 'race@test.example',
+      name: 'Race',
+      password: 'old-password-long-enough',
+    });
+    let release!: () => void;
+    let reached!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const captured = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const original = db.user.findUnique.bind(db.user);
+    const spy = vi.spyOn(db.user, 'findUnique').mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (args[0].where.email === 'race@test.example') {
+        reached();
+        await barrier;
+      }
+      return result;
+    });
+    // Start the request and stop it after it has read the old credential snapshot.
+    const delayed = mutate(request.agent(replica), 'post', '/api/auth/login', {
+      email: 'race@test.example',
+      password: 'old-password-long-enough',
+    }).then((r) => r);
+    try {
+      await captured;
+      const changed = await mutate(agent, 'patch', '/api/auth/account', {
+        name: 'Race',
+        currentPassword: 'old-password-long-enough',
+        newPassword: 'new-password-long-enough',
+      });
+      expect(changed.status).toBe(200);
+      release();
+      const login = await delayed;
+      expect(login.status).toBe(401);
+      expect((await agent.get('/api/student')).status).toBe(200);
+      const user = await db.user.findUniqueOrThrow({ where: { email: 'race@test.example' } });
+      expect(await db.session.count({ where: { userId: user.id } })).toBe(1);
+    } finally {
+      release();
+      spy.mockRestore();
+      await delayed;
+    }
+  });
+  it('uses target-term enrollment and selected-course context when saving plans', async () => {
+    const doc = {
+      ...demoCurriculum,
+      slug: 'term-context',
+      totalCredits: 6,
+      groups: [],
+      courses: [
+        {
+          ...demoCurriculum.courses[0],
+          code: 'A',
+          requirement: { type: 'corequisite', code: 'B' },
+        },
+        { ...demoCurriculum.courses[0], code: 'B', requirement: null },
+      ],
+    };
+    const imported = await mutate(admin, 'post', '/api/admin/import', {
+      format: 'json',
+      content: JSON.stringify(doc),
+      publish: true,
+    });
+    expect(imported.status).toBe(201);
+    const agent = request.agent(app);
+    await mutate(agent, 'post', '/api/auth/register', {
+      email: 'term@test.example',
+      name: 'Term',
+      password: 'term-password-long-enough',
+    });
+    const profile = await mutate(agent, 'put', '/api/student/profile', {
+      curriculumId: imported.body.id,
+      campus: 'Abu Dhabi',
+      currentTerm: 'Current',
+      semester: 1,
+    });
+    const enrolled = await mutate(agent, 'put', '/api/student/attempts', {
+      revision: profile.body.profile.revision,
+      attempts: [{ code: 'B', term: 'Old', status: 'IN_PROGRESS', grade: null }],
+    });
+    expect(enrolled.status).toBe(200);
+    expect(
+      (await mutate(agent, 'put', '/api/student/plans', { term: 'Current', courseCodes: ['A'] }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await mutate(agent, 'put', '/api/student/plans', { term: 'Old', courseCodes: ['A'] }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await mutate(agent, 'put', '/api/student/plans', {
+          term: 'Current',
+          courseCodes: ['A', 'B'],
+        })
+      ).status,
+    ).toBe(200);
+  });
+  it('rejects malformed documents and future verification, and stamps authenticated reviewer identity/time', async () => {
+    expect(
+      (
+        await mutate(admin, 'post', '/api/admin/import', {
+          format: 'json',
+          content: '{"courses":{}}',
+        })
+      ).status,
+    ).toBe(400);
+    const data = {
+      name: 'Review',
+      department: 'Synthetic',
+      sourceUrl: 'https://example.com/synthetic',
+      verifiedAt: '2999-01-01',
+    };
+    expect((await mutate(admin, 'post', '/api/admin/instructors', data)).status).toBe(400);
+    const r = await mutate(admin, 'post', '/api/admin/instructors', {
+      ...data,
+      verifiedAt: new Date().toISOString().slice(0, 10),
+    });
+    expect(r.status).toBe(201);
+    const reviewer = await db.user.findUniqueOrThrow({ where: { email: 'admin@test.example' } });
+    expect(r.body.reviewedBy).toBe(reviewer.id);
+    expect(Math.abs(Date.now() - Date.parse(r.body.reviewedAt))).toBeLessThan(5000);
+    const verified = {
+      ...demoCurriculum,
+      slug: 'reviewed-curriculum',
+      verification: 'VERIFIED',
+      verifiedAt: new Date().toISOString().slice(0, 10),
+      sources: [{ url: 'https://example.com/synthetic', note: 'Synthetic test only' }],
+      courses: demoCurriculum.courses.map((c) => ({
+        ...c,
+        sources: [{ url: 'https://example.com/synthetic', note: 'Synthetic test only' }],
+      })),
+    };
+    const c = await mutate(admin, 'post', '/api/admin/import', {
+      format: 'json',
+      content: JSON.stringify(verified),
+    });
+    expect(c.status).toBe(201);
+    expect(c.body.reviewedBy).toBe(reviewer.id);
+    expect(c.body.reviewedAt).toBeTruthy();
   });
   it('enforces database-backed auth rate limits without charging session lookups', async () => {
     const cfg = readConfig({

@@ -180,6 +180,11 @@ export function useAcademic() {
     ...s,
     curriculum,
     attempts: s.student?.attempts ?? [],
-    stats: progress(curriculum, s.student?.attempts ?? []),
+    stats: progress(
+      curriculum,
+      s.student?.attempts ?? [],
+      s.student?.plans.find((p) => p.term === s.student?.profile?.currentTerm)?.courseCodes ?? [],
+      s.student?.profile?.currentTerm,
+    ),
   };
 }

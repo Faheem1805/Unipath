@@ -11,7 +11,8 @@ import {
   attemptSchema,
   curriculumSchema,
   evaluate,
-  progress,
+  termContext,
+  verificationDateSchema,
   type Curriculum,
   type Attempt,
 } from '@unipath/shared';
@@ -20,6 +21,8 @@ import { hashPassword, verifyPassword, tokenHash, newToken } from './security.js
 import { importCurriculum, guardDepth } from './importer.js';
 
 declare global {
+  // Express's supported request augmentation uses its global namespace.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       identity?: { id: string; email: string; name: string; role: string };
@@ -173,10 +176,16 @@ export function createApp(
     req.identity?.role === 'ADMIN'
       ? next()
       : next(new HttpError(403, 'Administrator access required.'));
-  const setSession = async (res: Response, userId: string) => {
+  const createSession = async (tx: Prisma.TransactionClient, userId: string) => {
     const token = newToken();
     const expiresAt = new Date(Date.now() + config.SESSION_HOURS * 3600_000);
-    await db.session.create({ data: { id: tokenHash(token), userId, expiresAt } });
+    await tx.session.create({ data: { id: tokenHash(token), userId, expiresAt } });
+    return { token, expiresAt };
+  };
+  const sessionCookie = (
+    res: Response,
+    { token, expiresAt }: { token: string; expiresAt: Date },
+  ) => {
     res.cookie(config.COOKIE_NAME, token, {
       httpOnly: true,
       secure: config.secureCookie,
@@ -191,10 +200,14 @@ export function createApp(
       .object({ email, password, name: z.string().trim().min(1).max(80) })
       .strict()
       .parse(req.body);
-    const user = await db.user.create({
-      data: { email: data.email, name: data.name, passwordHash: await hashPassword(data.password) },
+    const passwordHash = await hashPassword(data.password);
+    const { user, session } = await db.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { email: data.email, name: data.name, passwordHash },
+      });
+      return { user, session: await createSession(tx, user.id) };
     });
-    await setSession(res, user.id);
+    sessionCookie(res, session);
     logger.info({ event: 'account_registered', requestId: req.requestId }, 'account registered');
     res.status(201).json({ user: publicUser(user) });
   });
@@ -210,11 +223,19 @@ export function createApp(
       user?.passwordHash ?? (await dummyHashPromise),
     );
     if (!user || !valid) throw new HttpError(401, 'Email or password is incorrect.');
-    if (req.cookies[config.COOKIE_NAME])
-      await db.session.deleteMany({
-        where: { id: tokenHash(String(req.cookies[config.COOKIE_NAME])) },
-      });
-    await setSession(res, user.id);
+    const session = await db.$transaction(async (tx) => {
+      // All credential changes and session issuance serialize on the same user row.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${user.id} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: user.id } });
+      if (!current || current.passwordHash !== user.passwordHash)
+        throw new HttpError(401, 'Email or password is incorrect.');
+      if (req.cookies[config.COOKIE_NAME])
+        await tx.session.deleteMany({
+          where: { id: tokenHash(String(req.cookies[config.COOKIE_NAME])) },
+        });
+      return createSession(tx, user.id);
+    });
+    sessionCookie(res, session);
     res.json({ user: publicUser(user) });
   });
   app.post('/api/auth/logout', async (req, res) => {
@@ -245,18 +266,23 @@ export function createApp(
       (!data.currentPassword || !(await verifyPassword(data.currentPassword, user.passwordHash)))
     )
       throw new HttpError(400, 'Current password is incorrect.');
-    const updated = await db.$transaction(async (tx) => {
+    const passwordHash = data.newPassword ? await hashPassword(data.newPassword) : undefined;
+    const { updated, session } = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${user.id} FOR UPDATE`;
+      const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
+      if (data.newPassword && current.passwordHash !== user.passwordHash)
+        throw new HttpError(409, 'Credentials changed concurrently. Sign in and retry.');
       const u = await tx.user.update({
         where: { id: user.id },
         data: {
           name: data.name,
-          ...(data.newPassword ? { passwordHash: await hashPassword(data.newPassword) } : {}),
+          ...(passwordHash ? { passwordHash } : {}),
         },
       });
       if (data.newPassword) await tx.session.deleteMany({ where: { userId: user.id } });
-      return u;
+      return { updated: u, session: data.newPassword ? await createSession(tx, user.id) : null };
     });
-    if (data.newPassword) await setSession(res, user.id);
+    if (session) sessionCookie(res, session);
     res.json({ user: publicUser(updated) });
   });
   app.delete('/api/auth/account', required, async (req, res) => {
@@ -401,12 +427,9 @@ export function createApp(
         if (!profile) throw new HttpError(400, 'Finish degree setup first.');
         const curriculum = curriculumSchema.parse(profile.curriculum.document);
         const attempts = (await tx.attempt.findMany({ where: { userId } })) as Attempt[];
-        const p = progress(curriculum, attempts);
-        const completed = new Set(
-          attempts.filter((a) => a.status === 'COMPLETED').map((a) => a.code),
-        );
-        const concurrent = new Set(data.courseCodes);
-        if (concurrent.size !== data.courseCodes.length)
+        const context = termContext(curriculum, attempts, data.term, data.courseCodes);
+        const { completed } = context;
+        if (new Set(data.courseCodes).size !== data.courseCodes.length)
           throw new HttpError(400, 'Remove duplicate courses.');
         let total = 0;
         for (const code of data.courseCodes) {
@@ -417,11 +440,7 @@ export function createApp(
               400,
               `${code} is already complete. Plan retakes separately with your adviser.`,
             );
-          const result = evaluate(c.requirement, {
-            completed,
-            concurrent,
-            credits: p.completedCredits,
-          });
+          const result = evaluate(c.requirement, context);
           if (!result.ok) throw new HttpError(400, `${code} is not eligible.`, result.reasons);
           total += c.credits;
         }
@@ -477,6 +496,9 @@ export function createApp(
         slug: document.slug,
         document: document as unknown as Prisma.InputJsonValue,
         published: data.publish,
+        ...(document.verification === 'VERIFIED'
+          ? { reviewedBy: req.identity!.id, reviewedAt: new Date() }
+          : {}),
       },
     });
     logger.info({ event: 'curriculum_imported', requestId: req.requestId }, 'curriculum imported');
@@ -515,6 +537,13 @@ export function createApp(
           published: data.published,
           slug: data.document.slug,
           revision: { increment: 1 },
+          // Publication of an unchanged, previously reviewed document preserves attribution.
+          ...(!isDeepStrictEqual(old.document, data.document)
+            ? {
+                reviewedBy: data.document.verification === 'VERIFIED' ? req.identity!.id : null,
+                reviewedAt: data.document.verification === 'VERIFIED' ? new Date() : null,
+              }
+            : {}),
         },
       });
       if (!count.count) throw new HttpError(409, 'This version changed. Reload before saving.');
@@ -537,7 +566,7 @@ export function createApp(
       name: z.string().trim().min(1).max(120),
       department: z.string().trim().min(1).max(120),
       sourceUrl: z.string().url().max(1000).startsWith('https://'),
-      verifiedAt: z.string().date(),
+      verifiedAt: verificationDateSchema,
     })
     .strict();
   app.get('/api/admin/directory', async (_req, res) =>
@@ -548,16 +577,28 @@ export function createApp(
   );
   app.post('/api/admin/instructors', async (req, res) => {
     const d = instructorInput.parse(req.body);
-    res
-      .status(201)
-      .json(await db.instructor.create({ data: { ...d, verifiedAt: new Date(d.verifiedAt) } }));
+    res.status(201).json(
+      await db.instructor.create({
+        data: {
+          ...d,
+          verifiedAt: new Date(d.verifiedAt),
+          reviewedBy: req.identity!.id,
+          reviewedAt: new Date(),
+        },
+      }),
+    );
   });
   app.put('/api/admin/instructors/:id', async (req, res) => {
     const d = instructorInput.parse(req.body);
     res.json(
       await db.instructor.update({
         where: { id: String(req.params.id) },
-        data: { ...d, verifiedAt: new Date(d.verifiedAt) },
+        data: {
+          ...d,
+          verifiedAt: new Date(d.verifiedAt),
+          reviewedBy: req.identity!.id,
+          reviewedAt: new Date(),
+        },
       }),
     );
   });
@@ -574,7 +615,7 @@ export function createApp(
       section: z.string().min(1).max(30),
       schedule: z.string().max(300).nullable(),
       sourceUrl: z.string().url().max(1000).startsWith('https://'),
-      verifiedAt: z.string().date(),
+      verifiedAt: verificationDateSchema,
       instructorId: z.string().uuid().nullable(),
     })
     .strict();
@@ -587,7 +628,12 @@ export function createApp(
       throw new HttpError(400, 'Unknown course or campus.');
     if (d.instructorId && !(await db.instructor.findUnique({ where: { id: d.instructorId } })))
       throw new HttpError(400, 'Unknown instructor.');
-    const data = { ...d, verifiedAt: new Date(d.verifiedAt) };
+    const data = {
+      ...d,
+      verifiedAt: new Date(d.verifiedAt),
+      reviewedBy: req.identity!.id,
+      reviewedAt: new Date(),
+    };
     res
       .status(req.method === 'POST' ? 201 : 200)
       .json(
@@ -609,13 +655,11 @@ export function createApp(
         .status(err.status)
         .json({ error: err.message, details: err.details, requestId: req.requestId });
     if (err instanceof ZodError)
-      return res
-        .status(400)
-        .json({
-          error: 'Please check the submitted data.',
-          details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-          requestId: req.requestId,
-        });
+      return res.status(400).json({
+        error: 'Please check the submitted data.',
+        details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+        requestId: req.requestId,
+      });
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2002')
         return res
@@ -624,12 +668,10 @@ export function createApp(
       if (err.code === 'P2025')
         return res.status(404).json({ error: 'Record not found.', requestId: req.requestId });
       if (err.code === 'P2034')
-        return res
-          .status(409)
-          .json({
-            error: 'Data changed concurrently. Reload and retry.',
-            requestId: req.requestId,
-          });
+        return res.status(409).json({
+          error: 'Data changed concurrently. Reload and retry.',
+          requestId: req.requestId,
+        });
     }
     if (
       err &&
@@ -637,26 +679,29 @@ export function createApp(
       'status' in err &&
       [400, 413].includes(Number(err.status))
     )
-      return res
-        .status(Number(err.status))
-        .json({
-          error: Number(err.status) === 413 ? 'Request is too large.' : 'Invalid JSON request.',
-          requestId: req.requestId,
-        });
+      return res.status(Number(err.status)).json({
+        error: Number(err.status) === 413 ? 'Request is too large.' : 'Invalid JSON request.',
+        requestId: req.requestId,
+      });
     logger.error(
       {
         requestId: req.requestId,
         errorType: err instanceof Error ? err.name : 'unknown',
         event: 'request_failed',
+        method: req.method,
+        route: req.route?.path ?? 'unmatched',
+        code:
+          err instanceof Prisma.PrismaClientKnownRequestError ||
+          err instanceof Prisma.PrismaClientInitializationError
+            ? (('code' in err ? err.code : err.errorCode) ?? 'DATABASE_UNAVAILABLE')
+            : 'UNEXPECTED_ERROR',
       },
       'request failed',
     );
-    res
-      .status(500)
-      .json({
-        error: 'The request could not be completed. Please try again.',
-        requestId: req.requestId,
-      });
+    res.status(500).json({
+      error: 'The request could not be completed. Please try again.',
+      requestId: req.requestId,
+    });
   });
   return { app, logger };
 }
