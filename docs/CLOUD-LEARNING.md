@@ -81,12 +81,12 @@ I restored it into a separate database named `unipath_restore_check`, leaving th
 
 The original and restored databases had matching counts:
 
-| Records | Original | Restored |
-|---|---:|---:|
-| Users | 1 | 1 |
-| Course attempts | 5 | 5 |
-| Semester plans | 1 | 1 |
-| Curricula | 1 | 1 |
+| Records         | Original | Restored |
+| --------------- | -------: | -------: |
+| Users           |        1 |        1 |
+| Course attempts |        5 |        5 |
+| Semester plans  |        1 |        1 |
+| Curricula       |        1 |        1 |
 
 I also copied the dump onto my local computer using SCP.
 
