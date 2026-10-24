@@ -114,6 +114,10 @@ function run(command, args, options = {}) {
 }
 const docker = (...args) => run('docker', args);
 const compose = (...args) => docker(...base, ...args);
+// Older Compose versions support `up --wait`, but not `start --wait`.
+// Start only the requested service; completed provisioning jobs must not rerun.
+const startService = (service) =>
+  compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '120', service);
 const check = async (name, action) => {
   currentCheck = name;
   console.log(`CHECK ${name}`);
@@ -551,7 +555,7 @@ try {
         unlock();
         await lock;
       }
-      compose('start', '--wait', 'backend');
+      startService('backend');
     },
   );
   await check('Linux idle shutdown exits zero within configured container grace', async () => {
@@ -560,14 +564,14 @@ try {
       docker('inspect', '--format', '{{.State.ExitCode}}', compose('ps', '-a', '-q', 'backend')),
       '0',
     );
-    compose('start', '--wait', 'backend');
+    startService('backend');
   });
   await check('database outage distinguishes liveness/readiness and recovers', async () => {
     compose('stop', 'database');
     assert.equal((await fetch(origin + '/health/live')).status, 200);
     assert.equal((await fetch(origin + '/health/ready')).status, 503);
     assert.equal((await student.request('/api/student')).status, 500);
-    compose('start', '--wait', 'database');
+    startService('database');
     await retry(async () => {
       assert.equal((await fetch(origin + '/health/ready')).status, 200);
       await records();
