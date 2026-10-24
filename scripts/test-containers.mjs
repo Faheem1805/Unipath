@@ -75,6 +75,14 @@ function run(command, args, options = {}) {
     resolve(dir, `command-${commandIndex++}.log`),
     (result.stdout ?? '') + (result.stderr ?? ''),
   );
+  if (
+    result.status !== 0 &&
+    command === 'docker' &&
+    args[0] === 'run' &&
+    args.includes('--ip')
+  ) {
+    console.error(result.stderr?.trim() || 'Docker returned no error details.');
+  }
   if (result.status !== 0)
     throw new Error(
       `${command} ${args[0]} failed (exit ${result.status}); inspect ignored logs in ${dir}`,
