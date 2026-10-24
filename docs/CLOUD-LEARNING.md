@@ -1,6 +1,8 @@
 # UniPath: My First Azure Deployment
 
-Date: 23 October 2026
+Deployment date: 23 October 2026
+
+CI verification and documentation update: 24 October 2026
 
 ## Goal
 
@@ -57,6 +59,14 @@ SSH rejected the private key in my Windows Downloads folder because WSL reported
 
 I used a copy inside my Ubuntu home directory, with permission mode 700 for `.ssh` and 600 for the private key.
 
+### CI container network and Docker Compose compatibility
+
+The acceptance suite initially failed when reserving a container's old IP address. Docker required an explicitly configured network subnet for that fixed-IP reservation. An explicit subnet was added to the disposable acceptance network.
+
+The next failure was caused by a tooling-version difference: the GitHub runner used Docker Compose v2.38.2, which rejected `start --wait`, while the newer local Compose version accepted it. The test restart commands were changed to `up -d --no-deps --wait`, retaining the health checks without rerunning completed provisioning jobs.
+
+The CI helper was also improved to identify the failing test stage, print redacted command errors, and upload redacted diagnostics on failure. This made it possible to distinguish a test-infrastructure problem from an application failure.
+
 ## Persistence Test
 
 I restarted the application containers and confirmed that my account and saved records remained available.
@@ -90,7 +100,28 @@ The original and restored databases had matching counts:
 
 I also copied the dump onto my local computer using SCP.
 
+I compared the SHA-256 checksum of the downloaded file with the VM copy and confirmed they matched.
+
 This verified a database restore and matching counts for these tables. I have not yet tested running the full application against the restored database.
+
+## GitHub Actions Verification
+
+On 24 October 2026, both jobs passed on GitHub for commit `14737ea`:
+
+- `checks`: formatting, lint, TypeScript checks, builds, unit tests, and PostgreSQL API tests.
+- `containers-and-browser`: all 15 acceptance groups, including browser workflows, persistence, changed-IP backend replacement, active and idle shutdown, dependency recovery, backup restoration, and safe logging.
+
+[Successful GitHub Actions run](https://github.com/Faheem1805/Unipath/actions/runs/40084289991)
+
+The workflow checks the repository on pushes and pull requests. It does not deploy to Azure or use the application's database on my VM.
+
+## Project Status and Cleanup
+
+The first milestone is complete: a private Azure deployment, persistence and outage exercises, a tested database restore, an off-VM backup with a matching checksum, and passing GitHub CI.
+
+Cleanup has not yet been recorded as complete, so there is no final teardown date. The dedicated lab resources include the VM, OS disk, public IP, network interface, virtual network, network security group, and Azure SSH public-key resource. The repository's read-only VM deploy key is separate from the local account SSH key used for development.
+
+The next cleanup decision is whether to retain the deployment temporarily or delete the dedicated resource group after confirming that its resources are no longer needed. A resource group alone does not incur a charge; retained resources such as disks and public IPs can continue to cost money even when VM compute is deallocated.
 
 ## Current Limitations
 
@@ -103,10 +134,8 @@ This verified a database restore and matching counts for these tables. I have no
 
 ## Next Steps
 
-1. Verify the downloaded backup's checksum against the VM copy.
-2. Resolve auto-shutdown and review actual Azure costs.
-3. Prepare and test the production configuration.
-4. Configure public DNS and HTTPS.
-5. Add monitoring and alerts.
-6. Rebuild the infrastructure using Terraform.
-7. Develop and test a deployment and rollback pipeline.
+1. Review actual Azure costs and record the teardown date if the lab is removed.
+2. Rebuild the infrastructure using Terraform as the next learning milestone.
+3. Prepare and test the production configuration, then configure public DNS and HTTPS.
+4. Add monitoring, alerts, and scheduled backups with retention.
+5. Develop and test a deployment and rollback pipeline.
