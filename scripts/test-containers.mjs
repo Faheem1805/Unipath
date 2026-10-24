@@ -67,6 +67,24 @@ const base = [
   override,
 ];
 const results = [];
+let currentCheck = 'setup';
+const secrets = new Set([
+  ...Object.entries(env)
+    .filter(([key, value]) => /PASSWORD|SECRET|TOKEN|DATABASE_URL/.test(key) && value?.length >= 8)
+    .map(([, value]) => value),
+  'synthetic-student-password-only',
+  'synthetic-student-password-only-new',
+  'synthetic-admin-password-only',
+]);
+const redact = (value) => {
+  let text = String(value);
+  for (const secret of [...secrets].sort((a, b) => b.length - a.length)) {
+    text = text.replaceAll(secret, '[REDACTED]');
+    text = text.replaceAll(encodeURIComponent(secret), '[REDACTED]');
+  }
+  return text.replace(/postgresql:\/\/[^\s'"<>]+/g, '[REDACTED_DATABASE_URL]');
+};
+const diagnostics = [];
 let commandIndex = 0;
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -81,18 +99,24 @@ function run(command, args, options = {}) {
     resolve(dir, `command-${commandIndex++}.log`),
     (result.stdout ?? '') + (result.stderr ?? ''),
   );
-  if (result.status !== 0 && command === 'docker' && args[0] === 'run' && args.includes('--ip')) {
-    console.error(result.stderr?.trim() || 'Docker returned no error details.');
-  }
-  if (result.status !== 0)
+  const summary = redact(
+    `CHECK: ${currentCheck}\nCOMMAND: ${command} ${args.join(' ')}\nEXIT: ${result.status}\n${result.stdout ?? ''}${result.stderr ?? ''}${result.error?.message ?? ''}`,
+  );
+  diagnostics.push(summary);
+  writeFileSync(resolve(dir, 'diagnostics.log'), diagnostics.join('\n\n'));
+  if (result.status !== 0) {
+    console.error(summary.slice(-8000));
     throw new Error(
       `${command} ${args[0]} failed (exit ${result.status}); inspect ignored logs in ${dir}`,
     );
+  }
   return result.stdout.trim();
 }
 const docker = (...args) => run('docker', args);
 const compose = (...args) => docker(...base, ...args);
 const check = async (name, action) => {
+  currentCheck = name;
+  console.log(`CHECK ${name}`);
   await action();
   results.push({ name, status: 'PASS' });
   console.log(`PASS ${name}`);
@@ -140,7 +164,11 @@ function client() {
         signal: AbortSignal.timeout(15000),
       });
       const next = response.headers.get('set-cookie');
-      if (next) cookie = next.split(';')[0];
+      if (next) {
+        cookie = next.split(';')[0];
+        const token = cookie.slice(cookie.indexOf('=') + 1);
+        if (token.length >= 8) secrets.add(token);
+      }
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) : null };
     },
@@ -602,8 +630,8 @@ try {
       assert.ok(!logs.includes(secret));
   });
 } catch (error) {
-  results.push({ name: error.message, status: 'FAIL' });
-  console.error(error.message);
+  results.push({ name: currentCheck, status: 'FAIL', error: redact(error.message) });
+  console.error(redact(error.stack ?? error.message));
   process.exitCode = 1;
 } finally {
   await Promise.allSettled([adminDb.$disconnect(), ownerDb.$disconnect(), runtimeDb.$disconnect()]);
