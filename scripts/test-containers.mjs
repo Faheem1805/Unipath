@@ -35,6 +35,7 @@ const env = {
   SEED_DEMO: 'false',
 };
 const override = resolve(dir, 'compose.yml');
+// The changed-address test reserves an IP; Docker requires an explicit subnet for that.
 writeFileSync(
   override,
   `services:
@@ -47,6 +48,11 @@ writeFileSync(
       CORS_ORIGINS: '${origin}'
       API_RATE_LIMIT: 5000
       AUTH_RATE_LIMIT: 1000
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: ${JSON.stringify(process.env.UNIPATH_TEST_SUBNET || '172.30.250.0/24')}
 `,
 );
 const base = [
@@ -75,12 +81,7 @@ function run(command, args, options = {}) {
     resolve(dir, `command-${commandIndex++}.log`),
     (result.stdout ?? '') + (result.stderr ?? ''),
   );
-  if (
-    result.status !== 0 &&
-    command === 'docker' &&
-    args[0] === 'run' &&
-    args.includes('--ip')
-  ) {
+  if (result.status !== 0 && command === 'docker' && args[0] === 'run' && args.includes('--ip')) {
     console.error(result.stderr?.trim() || 'Docker returned no error details.');
   }
   if (result.status !== 0)
