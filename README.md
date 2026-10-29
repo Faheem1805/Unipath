@@ -1,10 +1,103 @@
-# UniPath
+# UniPath on Azure — My First Cloud Project
 
-**Your degree, in perspective.** An independent university degree-planning application, built as a portable foundation for an Azure Cloud Engineering portfolio.
+**A hands-on Azure deployment lab by Faheem Abdul Azees.** I deployed UniPath on an Ubuntu virtual machine, restricted access through SSH, ran its services with Docker Compose, configured budget alerts, and practised persistence, outage recovery, and database backup and restore.
 
-UniPath connects a React student workspace to an Express API and PostgreSQL. It includes a genuine interactive degree map, deterministic prerequisite rules, private accounts, saved academic records, semester plans, a course directory, GPA projections, and a protected academic administration workspace.
+UniPath is the application I used to learn cloud engineering. This repository contains its source code alongside the record of my first Azure project.
 
-![UniPath demonstration dashboard](docs/images/dashboard.png)
+**Completed:** 23 October 2026 · **CI and learning record updated:** 24 October 2026
+
+**Deployment:** private preview through an SSH tunnel · **Provisioning:** manual · **Next milestone:** Terraform
+
+[My deployment and learning record](docs/CLOUD-LEARNING.md) · [Architecture](#azure-deployment-architecture) · [Evidence and results](#evidence-and-results) · [Run the application locally](#quick-start-with-docker)
+
+## What I did
+
+My contribution to this cloud milestone was configuring and operating the Azure deployment. The existing React, Express, and PostgreSQL application provided a realistic workload. The application source and automated test tooling are supporting project assets; their presence is separate from the infrastructure work I practised myself.
+
+| Area                     | Hands-on work                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Azure infrastructure     | Deployed an Ubuntu VM and its networking in an Azure for Students subscription; investigated region and VM-size restrictions.                   |
+| Access                   | Restricted SSH to my public IP, connected from Ubuntu on WSL, and accessed the application through an encrypted SSH tunnel.                     |
+| Linux and deployment     | Installed Git, Docker and Compose; cloned the private repository with a dedicated read-only deploy key; configured and started the application. |
+| Cost awareness           | Configured a US$10 monthly subscription budget for spending alerts. This is an alert threshold, not a spending cap.                             |
+| Persistence and recovery | Checked saved records after container restarts, stopped and restarted PostgreSQL, and observed the API's health responses.                      |
+| Backup and restore       | Restored a PostgreSQL dump into a separate database, compared record counts, and copied the backup off the VM with a matching SHA-256 checksum. |
+
+## Azure deployment architecture
+
+```mermaid
+flowchart LR
+  subgraph Laptop[My computer]
+    Browser[Web browser]
+    Tunnel[Local SSH tunnel]
+    Browser --> Tunnel
+  end
+  subgraph Azure[Azure — Denmark East]
+    NSG[Network security group<br/>SSH restricted to my public IP]
+    subgraph VM[Ubuntu 24.04 LTS VM]
+      Loopback[Loopback-bound frontend port]
+      Web[Nginx frontend container]
+      API[Express API container]
+      PG[(PostgreSQL container)]
+      Volume[(Persistent Docker volume)]
+      Loopback --> Web --> API --> PG --> Volume
+    end
+    NSG --> Loopback
+  end
+  Tunnel -->|Encrypted SSH connection| NSG
+```
+
+The browser reaches the VM through a local SSH tunnel. The frontend binds to the VM's loopback interface; port 8080 is not exposed publicly. Docker Compose runs the frontend, API and database on the same VM.
+
+| Deployment component | Recorded configuration                   |
+| -------------------- | ---------------------------------------- |
+| VM                   | `Standard_B2als_v2` — 2 vCPUs, 4 GiB RAM |
+| Operating system     | Ubuntu Server 24.04 LTS                  |
+| Region               | Denmark East                             |
+| OS disk              | 30 GiB Standard SSD                      |
+| Boot security        | Trusted Launch, Secure Boot and vTPM     |
+| Resource tags        | `project=unipath`, `environment=dev`     |
+
+## Evidence and results
+
+The [deployment journal](docs/CLOUD-LEARNING.md) records the exercises and their limits. These are historical results, not a claim that the VM is currently running or publicly reachable.
+
+| Exercise                         | Recorded result                                                                                                               | What it establishes                                                                                                             |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Container restart                | Account, course progress and saved plan remained available.                                                                   | Persistence across container restarts; not recovery from VM or disk loss.                                                       |
+| Database outage                  | Liveness stayed responsive; readiness returned HTTP 503, then recovered when PostgreSQL restarted without restarting the API. | The difference between a running process and an application ready to serve requests.                                            |
+| Restore into a separate database | Original and restored counts matched: 1 user, 5 course attempts, 1 semester plan and 1 curriculum.                            | A logical restore and matching counts for these tables; full application sign-in against that restored database was not tested. |
+| Off-VM backup                    | The downloaded dump's SHA-256 checksum matched the VM copy.                                                                   | A matching backup copy outside the VM; no scheduled retention policy.                                                           |
+| GitHub CI                        | Both jobs passed for commit `14737ea` on 24 October 2026.                                                                     | Repository checks and isolated acceptance tests; not a deployment to Azure.                                                     |
+
+[View the recorded successful GitHub Actions run](https://github.com/Faheem1805/Unipath/actions/runs/40084289991). The workflow checks pushes and pull requests; it does not deploy the application or use the VM's database.
+
+### Application used in the lab
+
+![UniPath demonstration dashboard showing the workload used for the Azure lab](docs/images/dashboard.png)
+
+_Application demonstration screenshot. Azure configuration and recovery results are documented in the deployment journal; this image shows the workload, rather than evidence of its hosting location._
+
+## Challenges and lessons
+
+- **Azure size availability:** `NotAvailableForSubscription` blocked the initial UAE North choice. I investigated region permissions, VM-family quota and size availability, then deployed in Denmark East.
+- **GitHub authentication:** account-password cloning failed. I used a dedicated read-only SSH deploy key on the VM.
+- **SSH key permissions:** a key in Windows Downloads had permissions WSL considered too broad. Moving a copy into the Ubuntu home directory and applying restrictive permissions resolved access.
+- **Health checks:** stopping PostgreSQL showed why liveness and readiness must answer different questions.
+- **Backups:** a persistent volume survived container restarts, but a separate restore exercise and an off-VM copy gave stronger evidence about recoverability.
+- **CI troubleshooting:** fixed-IP test networking and different Docker Compose versions caused acceptance failures. Explicit test subnets, compatible restart commands and redacted diagnostics made those failures diagnosable. These test-tooling fixes are documented separately from my Azure exercises.
+
+## Scope and current limits
+
+This first milestone used a manually configured VM and the development deployment configuration. It is a private learning environment. Public DNS and HTTPS, Terraform provisioning, a deployment pipeline, scheduled backups and retention, zone failover and complete VM recovery are future work.
+
+Auto-shutdown was not completed because the portal's Save button was disabled. Cleanup has not been recorded, so this repository does not assert that all lab resources have been deleted. Budget alerts do not stop spending; retained disks and public IP resources can still incur charges after VM compute is deallocated.
+
+Earlier application verification reports describe the state at the time they were written. Use [the cloud learning record](docs/CLOUD-LEARNING.md) for the later Azure exercises and recorded GitHub CI result.
+
+## Application overview
+
+**Your degree, in perspective.** UniPath is an independent university degree-planning application connecting a React student workspace to an Express API and PostgreSQL. It includes an interactive degree map, deterministic prerequisite rules, private accounts, saved academic records, semester plans, a course directory, GPA projections, and a protected academic administration workspace.
 
 **Academic data:** the included 124-credit, 47-course curriculum is **entirely fictional**. The university and degree context are Al Ain University, BSc Software Engineering; demo course codes, requirements, electives and suggested terms are not AAU requirements. Verified public facts and unresolved questions are recorded separately in [the source review](database/data/aau-source-review.json). UniPath is not affiliated with or endorsed by AAU.
 
@@ -23,7 +116,7 @@ Without Node on the host, copy `.env.example` to `.env`, replace both `CHANGE_ME
 
 The database waits for readiness, a one-shot migration job applies migrations and an idempotent seed, then the API and frontend start. Only the frontend is published to the host. PostgreSQL data persists in `unipath_unipath-postgres`. `docker compose down` preserves it. `docker compose down -v` **deletes it**.
 
-**Staging:** use the separate [production configuration and release procedure](docs/STAGING.md), not development defaults. Linux container, database and browser checks are recorded in [staging verification](docs/STAGING_VERIFICATION.md); the [original verification report](docs/VERIFICATION.md) and [audit](docs/CODEBASE_AUDIT.md) are historical. The real Azure VM, HTTPS edge and public proxy path still require acceptance.
+**Staging:** use the separate [production configuration and release procedure](docs/STAGING.md), not development defaults. Linux container, database and browser checks are recorded in [staging verification](docs/STAGING_VERIFICATION.md); the [original verification report](docs/VERIFICATION.md) and [audit](docs/CODEBASE_AUDIT.md) are historical. The later private Azure deployment is recorded in [the cloud learning journal](docs/CLOUD-LEARNING.md). Public HTTPS and the public proxy path still require acceptance.
 
 ## Local development
 
