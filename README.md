@@ -95,6 +95,10 @@ Auto-shutdown was not completed because the portal's Save button was disabled. C
 
 Earlier application verification reports describe the state at the time they were written. Use [the cloud learning record](docs/CLOUD-LEARNING.md) for the later Azure exercises and recorded GitHub CI result.
 
+## Terraform follow-up
+
+[Project two: UniPath on Azure with Terraform](docs/TERRAFORM-AZURE-LAB.md) documents the infrastructure configuration, drift exercise, remote state and recovery work.
+
 ## Application overview
 
 **Your degree, in perspective.** UniPath is an independent university degree-planning application connecting a React student workspace to an Express API and PostgreSQL. It includes an interactive degree map, deterministic prerequisite rules, private accounts, saved academic records, semester plans, a course directory, GPA projections, and a protected academic administration workspace.
