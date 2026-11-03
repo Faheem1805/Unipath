@@ -1,5 +1,7 @@
 # UniPath on Azure with Terraform
 
+[Failure playbook and interview practice](FAILURE-PLAYBOOK.md)
+
 This second cloud project rebuilt the original UniPath deployment as infrastructure as code. The application runs on one Ubuntu VM using Docker Compose. Nginx serves the React frontend, Express handles the API, and PostgreSQL persists records in a Docker volume.
 
 ```mermaid

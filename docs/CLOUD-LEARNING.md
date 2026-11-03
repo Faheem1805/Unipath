@@ -1,5 +1,7 @@
 # UniPath: My First Azure Deployment
 
+[Failure playbook and interview practice](FAILURE-PLAYBOOK.md)
+
 Deployment date: 23 October 2026
 
 CI verification and documentation update: 24 October 2026
