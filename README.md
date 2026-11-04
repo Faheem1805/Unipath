@@ -97,7 +97,7 @@ Earlier application verification reports describe the state at the time they wer
 
 ## Terraform follow-up
 
-[Project two: UniPath on Azure with Terraform](docs/TERRAFORM-AZURE-LAB.md) documents the infrastructure configuration, drift exercise, remote state and recovery work.
+[Project two: UniPath on Azure with Terraform](https://github.com/Faheem1805/UniPath-Azure-Terraform) documents the infrastructure configuration, drift exercise, remote state and recovery work.
 
 ## Application overview
 

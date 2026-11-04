@@ -1,6 +1,0 @@
-subscription_id  = "YOUR-AZURE-SUBSCRIPTION-ID"
-ssh_public_key   = "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY"
-allowed_ssh_cidr = "203.0.113.10/32" # Documentation example. Use your current public IPv4 address.
-
-location = "denmarkeast"
-vm_size  = "Standard_B2als_v2"

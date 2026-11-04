@@ -20,3 +20,6 @@ coverage/
 *.log
 *.dump
 *.sql.gz
+
+# Project 2 moved to its own repository. Preserve any existing local lab checkout.
+/infrastructure/terraform/
